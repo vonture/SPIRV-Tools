@@ -60,8 +60,7 @@ class PassTest : public TestT {
   // from pass Process() function.
   std::tuple<std::vector<uint32_t>, Pass::Status> OptimizeToBinary(
       Pass* pass, const std::string& original, bool skip_nop) {
-    context_ =
-        std::move(BuildModule(env_, consumer_, original, assemble_options_));
+    context_ = BuildModule(env_, consumer_, original, assemble_options_);
     EXPECT_NE(nullptr, context()) << "Assembling failed for shader:\n"
                                   << original << std::endl;
     if (!context()) {
@@ -75,7 +74,9 @@ class PassTest : public TestT {
     const auto status = pass->Run(context());
 
     std::vector<uint32_t> binary;
-    context()->module()->ToBinary(&binary, skip_nop);
+    if (status != Pass::Status::Failure) {
+      context()->module()->ToBinary(&binary, skip_nop);
+    }
     return std::make_tuple(binary, status);
   }
 
@@ -195,8 +196,7 @@ class PassTest : public TestT {
   // messages.
   template <typename PassT, typename... Args>
   void SinglePassRunAndFail(const std::string& original, Args&&... args) {
-    context_ =
-        std::move(BuildModule(env_, consumer_, original, assemble_options_));
+    context_ = BuildModule(env_, consumer_, original, assemble_options_);
     EXPECT_NE(nullptr, context()) << "Assembling failed for shader:\n"
                                   << original << std::endl;
     std::ostringstream errs;
@@ -233,23 +233,25 @@ class PassTest : public TestT {
   void RunAndCheck(const std::string& original, const std::string& expected) {
     assert(manager_->NumPasses());
 
-    context_ =
-        std::move(BuildModule(env_, nullptr, original, assemble_options_));
+    context_ = BuildModule(env_, nullptr, original, assemble_options_);
     ASSERT_NE(nullptr, context());
 
     context()->set_preserve_bindings(OptimizerOptions()->preserve_bindings_);
     context()->set_preserve_spec_constants(
         OptimizerOptions()->preserve_spec_constants_);
 
-    manager_->Run(context());
+    auto status = manager_->Run(context());
+    EXPECT_NE(status, Pass::Status::Failure);
 
-    std::vector<uint32_t> binary;
-    context()->module()->ToBinary(&binary, /* skip_nop = */ false);
+    if (status != Pass::Status::Failure) {
+      std::vector<uint32_t> binary;
+      context()->module()->ToBinary(&binary, /* skip_nop = */ false);
 
-    std::string optimized;
-    SpirvTools tools(env_);
-    EXPECT_TRUE(tools.Disassemble(binary, &optimized, disassemble_options_));
-    EXPECT_EQ(expected, optimized);
+      std::string optimized;
+      SpirvTools tools(env_);
+      EXPECT_TRUE(tools.Disassemble(binary, &optimized, disassemble_options_));
+      EXPECT_EQ(expected, optimized);
+    }
   }
 
   void SetAssembleOptions(uint32_t assemble_options) {
